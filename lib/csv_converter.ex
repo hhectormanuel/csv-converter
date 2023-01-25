@@ -1,7 +1,9 @@
 defmodule CsvConverter do
-  defp convert_csv(content, sep, space, has_columns) do
+  import FindFiles
+
+  defp convert_csv(content, sep, space, has_columns, type) do
     {:ok, agent} = Agent.start_link(fn -> [] end)
-    {columns, data} = get_columns_data(content, sep, space, has_columns)
+    {columns, data} = get_columns_data(content, sep, space, has_columns, type)
     Enum.each(data, fn x -> add_data(columns, x, agent) end)
     chunk(length(columns), agent)
     {map, map_agent} = mapping(agent)
@@ -52,29 +54,38 @@ defmodule CsvConverter do
     add_data(tail, tail2, agent)
   end
 
-  defp get_columns_data(content, sep, space, has_columns) do
-    [hd | tail] = String.split(content, space)
+
+  defp get_columns_data(content, sep, _space, false, type) do
+    data =
+      String.split(content, "\n")
+      |> Enum.reduce([], fn x, acc ->
+        acc ++ [String.split(x, sep)]
+      end)
+      |> List.delete([""])
+    cond do
+      type == "sms" -> {columns_common() ++ columns_sms(), data}
+      type == "voice" -> {columns_common() ++ columns_voice(), data}
+      type == "data" -> {columns_common() ++ columns_data(), data}
+    end
+
+  end
+
+  defp get_columns_data(content, sep, _space, true, _type) do
+    [hd | tail] = String.split(content, "\n")
     data = Enum.reduce(tail, [], fn x, acc ->
       acc ++ [String.split(x, sep)]
     end)
-    if has_columns do
-      {String.split(hd, sep), data}
-    else
-      data = List.delete_at(data, 3)
-      data = [String.split(hd, sep)] ++ data
-      columns = Enum.map(1..length(String.split(hd, sep)), fn x -> "columna #{x}" end)
-      {columns, data}
-    end
+    {String.split(hd, sep), data}
   end
 
-  def read_csv_from_url(url, sep \\ ",", space \\ "\n", has_columns \\ true) do
+  def read_csv_from_url(url, sep \\ ",", space \\ "\n", has_columns \\ true, type) do
     petition = HTTPotion.get(url)
-    convert_csv(petition.body, sep, space, has_columns)
+    convert_csv(petition.body, sep, space, has_columns, type)
   end
 
-  def read_csv_from_file(path, sep \\ ",", space \\ "\n", has_columns \\ true) do
+  def read_csv_from_file(path, sep \\ ",", space \\ "\n", has_columns \\ true, type) do
     {:ok, content} = File.read(path)
-    convert_csv(content, sep, space, has_columns)
+    convert_csv(content, sep, space, has_columns, type)
   end
 
 end
